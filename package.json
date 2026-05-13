@@ -130,7 +130,7 @@
     "transliteration": "2.2.0",
     "tsx": "4.20.3",
     "underscore.string": "3.3.6",
-    "url-join": "1.1.0",
+    "url-join": "5.0.0",
     "usb-hotplug": "^0.1.6",
     "utf-8-validate": "5.0.9",
     "uuid": "^11.0.3",
