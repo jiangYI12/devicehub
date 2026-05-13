@@ -18,7 +18,7 @@ openapi-python-client = "0.21.6"
 devicehub_client = {path = "devicehub_client", develop=true}
 teamcity-messages = "1.32"
 pytest-asyncio = "0.24.0"
-pytest-check = "2.4.1"
+pytest-check = "2.8.0"
 rust-just = "1.39.0"
 h11 = "0.16.0"
 websockets = "15.0.1"
