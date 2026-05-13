@@ -10,7 +10,7 @@ services:
             - ./scripts/nginx.conf:/etc/nginx/nginx.conf:ro
             - certs:/etc/nginx/ssl:ro
         ports:
-            - "127.0.0.1:8082:80"
+            - "127.0.0.1:38180:80"
         depends_on:
             devicehub-app:
                 condition: service_started
