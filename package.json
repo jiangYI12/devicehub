@@ -164,7 +164,7 @@
     "esbuild": "0.25.8",
     "eslint": "^9.30.1",
     "event-stream": "3.3.5",
-    "exports-loader": "^4.0.0",
+    "exports-loader": "^5.0.0",
     "fs-extra": "8.1.0",
     "globals": "^15.11.0",
     "http-https": "1.0.0",
