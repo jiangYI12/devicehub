@@ -102,7 +102,7 @@
     "node-hid": "^3.1.2",
     "node-simctl": "^7.7.5",
     "nsyslog-parser": "^0.10.1",
-    "oboe": "2.1.5",
+    "oboe": "2.1.7",
     "openid-client": "5.6.5",
     "packery": "1.4.3",
     "passport": "0.6.0",
