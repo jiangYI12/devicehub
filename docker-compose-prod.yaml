@@ -8,7 +8,7 @@ services:
         container_name: devicehub-nginx
         volumes:
             - ./scripts/nginx.conf:/etc/nginx/nginx.conf:ro
-            - certs:/etc/nginx/ssl:ro
+            - /data/deviceHub/certs:/etc/nginx/ssl:ro
         ports:
             - "127.0.0.1:38180:80"
         depends_on:
@@ -66,7 +66,7 @@ services:
         networks:
             devicehub:
         volumes:
-            - devicehub-db-volume:/data/db
+            - /data/deviceHub/mongo:/data/db
     devicehub-mongosetup:
         image: mongo:7.0
         container_name: devicehub-mongosetup
@@ -182,6 +182,8 @@ services:
         restart: unless-stopped
         networks:
             devicehub:
+        volumes:
+            - /data/deviceHub/storage-temp:/tmp
     devicehub-triproxy-app:
         build: .
         image: vkcom/devicehub
@@ -277,7 +279,4 @@ services:
         environment:
             - SSL_SUBJECT=${STF_DOMAIN}
         volumes:
-            - certs:/certs:rw
-volumes:
-    devicehub-db-volume:
-    certs:
+            - /data/deviceHub/certs:/certs:rw
