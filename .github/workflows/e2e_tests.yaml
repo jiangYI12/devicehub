@@ -25,7 +25,7 @@ jobs:
           password: ${{ secrets.DEVTOOLS_GITHUB_TOKEN }}
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Remove dangling images
         run: docker system prune --volumes -a -f
