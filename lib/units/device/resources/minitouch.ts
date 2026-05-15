@@ -50,28 +50,29 @@ export default syrup.serial()
         const pushResource = async (res: Resource) => {
             const transfer = await adb.getDevice(options.serial).push(res.src, res.dest, res.mode)
             await transfer.waitForEnd()
+            await adb.getDevice(options.serial).execOut(['chmod', '755', res.dest])
         }
 
-        const checkExecutable = async (res: Resource) => {
+        const checkInstalled = async (res: Resource) => {
             try {
                 const stats = await adb.getDevice(options.serial).stat(res.dest)
-                return (stats.mode & fs.constants.S_IXUSR) === fs.constants.S_IXUSR
+                return Boolean(stats)
             } catch (err: any) {
                 return false
             }
         }
 
         const installResource = async (res: Resource): Promise<void> => {
-            if (await checkExecutable(res)) return;
+            if (await checkInstalled(res)) return;
 
             log.info('Installing "%s" as "%s"', res.src, res.dest)
 
             await removeResource(res)
             await pushResource(res)
-            const ok = await checkExecutable(res)
+            const ok = await checkInstalled(res)
 
             if (!ok) {
-                log.error('Pushed "%s" not executable, attempting fallback location', res.comm)
+                log.error('Pushed "%s" failed verification, attempting fallback location', res.comm)
                 res.shift()
                 return installResource(res)
             }

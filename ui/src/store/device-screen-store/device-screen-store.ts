@@ -10,6 +10,7 @@ import { authStore } from '@/store/auth-store'
 
 import type { ElementBoundSize, StartScreenStreamingMessage } from './types'
 import type { Device } from '@/generated/types'
+import { ScrcpyH264Decoder } from './scrcpy-h264-decoder'
 
 @injectable()
 @deviceConnectionRequired()
@@ -22,9 +23,10 @@ export class DeviceScreenStore {
   private websocketReconnectionTimeoutID: ReturnType<typeof setTimeout> | null = null
   private disposed = false
 
-  private context: ImageBitmapRenderingContext | null = null
+  private context: CanvasRenderingContext2D | null = null
   private canvasWrapper: HTMLDivElement | null = null
   private device: Device | null = null
+  private scrcpyDecoder: ScrcpyH264Decoder | null = null
   private showScreen = true
   private options = {
     autoScaleForRetina: true,
@@ -36,6 +38,7 @@ export class DeviceScreenStore {
     height: 0,
   }
   private screenRotation = 0
+  private screenStreamFormat: 'image' | 'h264' = 'image'
   private isScreenStreamingJustStarted = false
 
   isAspectRatioModeLetterbox = false
@@ -82,7 +85,7 @@ export class DeviceScreenStore {
       return
     }
 
-    this.context = canvas.getContext('bitmaprenderer')
+    this.context = canvas.getContext('2d')
     this.canvasWrapper = canvasWrapper
 
     this.connectWebsocket()
@@ -91,6 +94,7 @@ export class DeviceScreenStore {
   stopScreenStreaming(): void {
     this.disposed = true
     this.stopWebsocket()
+    this.stopScrcpyDecoder()
 
     if (this.websocketReconnectionTimeoutID) {
       clearTimeout(this.websocketReconnectionTimeoutID)
@@ -244,7 +248,7 @@ export class DeviceScreenStore {
     // Pass JWT token securely via WebSocket subprotocol
     this.websocket = new WebSocket(this.device.display.url, `access_token.${authStore.jwt}`)
 
-    this.websocket.binaryType = 'blob'
+    this.websocket.binaryType = 'arraybuffer'
     this.websocket.onopen = this.openListener.bind(this)
     this.websocket.onmessage = this.messageListener.bind(this)
     this.websocket.onerror = this.errorListener.bind(this)
@@ -256,6 +260,32 @@ export class DeviceScreenStore {
       this.websocket.close()
       this.websocket = null
     }
+  }
+
+  private stopScrcpyDecoder(): void {
+    this.scrcpyDecoder?.reset()
+    this.scrcpyDecoder = null
+  }
+
+  private ensureScrcpyDecoder(): ScrcpyH264Decoder {
+    if (this.scrcpyDecoder) {
+      return this.scrcpyDecoder
+    }
+
+    this.scrcpyDecoder = new ScrcpyH264Decoder(
+      (frame) => {
+        try {
+          this.drawDecodedVideoFrame(frame)
+        } finally {
+          frame.close()
+        }
+      },
+      (error) => {
+        console.error('Scrcpy decoder failed:', error)
+      }
+    )
+
+    return this.scrcpyDecoder
   }
 
   private reconnectWebsocket(): void {
@@ -276,21 +306,21 @@ export class DeviceScreenStore {
     this.isScreenStreamingJustStarted = true
   }
 
-  private messageListener(message: MessageEvent<Blob | string>): void {
-    if (message.data instanceof Blob) {
-      createImageBitmap(message.data).then((image) => {
-        if (!this.context) {
-          throw new Error('Context is not set')
+  private messageListener(message: MessageEvent<ArrayBuffer | Blob | string>): void {
+    if (message.data instanceof Blob || message.data instanceof ArrayBuffer) {
+      if (this.screenStreamFormat === 'h264') {
+        void this.ensureScrcpyDecoder().pushChunk(message.data)
+        return
+      }
+
+      const imageSource = message.data instanceof Blob ? message.data : new Blob([message.data])
+
+      createImageBitmap(imageSource).then((image) => {
+        try {
+          this.drawImageBitmapFrame(image)
+        } finally {
+          image.close()
         }
-
-        if (this.isScreenStreamingJustStarted) {
-          this.updateImageArea(image.width, image.height)
-
-          this.setIsScreenLoading(false)
-          this.isScreenStreamingJustStarted = false
-        }
-
-        this.context.transferFromImageBitmap(image)
       })
 
       return
@@ -338,9 +368,47 @@ export class DeviceScreenStore {
       const startData: StartScreenStreamingMessage = JSON.parse(message.data.replace(startRegex, ''))
 
       this.isScreenStreamingJustStarted = true
-
+      this.screenStreamFormat = startData.streamFormat ?? 'image'
       this.screenRotation = startData.orientation
+
+      if (this.screenStreamFormat === 'h264') {
+        this.ensureScrcpyDecoder()
+      } else {
+        this.stopScrcpyDecoder()
+      }
     }
+  }
+
+  private drawImageBitmapFrame(image: ImageBitmap): void {
+    if (!this.context) {
+      throw new Error('Context is not set')
+    }
+
+    if (this.isScreenStreamingJustStarted) {
+      this.updateImageArea(image.width, image.height)
+
+      this.setIsScreenLoading(false)
+      this.isScreenStreamingJustStarted = false
+    }
+
+    this.context.clearRect(0, 0, this.context.canvas.width, this.context.canvas.height)
+    this.context.drawImage(image, 0, 0, this.context.canvas.width, this.context.canvas.height)
+  }
+
+  private drawDecodedVideoFrame(frame: VideoFrame): void {
+    if (!this.context) {
+      throw new Error('Context is not set')
+    }
+
+    if (this.isScreenStreamingJustStarted) {
+      this.updateImageArea(frame.displayWidth || frame.codedWidth, frame.displayHeight || frame.codedHeight)
+
+      this.setIsScreenLoading(false)
+      this.isScreenStreamingJustStarted = false
+    }
+
+    this.context.clearRect(0, 0, this.context.canvas.width, this.context.canvas.height)
+    this.context.drawImage(frame, 0, 0, this.context.canvas.width, this.context.canvas.height)
   }
 
   private errorListener(): void {}
@@ -348,6 +416,7 @@ export class DeviceScreenStore {
   private closeListener(event: CloseEvent): void {
     this.setIsScreenLoading(true)
     this.websocketReconnecting = false
+    this.stopScrcpyDecoder()
 
     if (event.code === 1008) {
       deviceErrorModalStore.setError(t('Unauthorized'))

@@ -1,4 +1,5 @@
 import mongo from 'mongodb'
+import { existsSync, readFileSync } from 'node:fs'
 import _setup from './setup.js'
 import srv from '../util/srv.js'
 import EventEmitter from 'events'
@@ -12,11 +13,46 @@ import {type SocketWrapper} from '../util/zmqutil.js'
 
 const log = logger.createLogger('db')
 
+function readEnvFileConfig() {
+    const configPath = process.env.DEVICEHUB_ENV_FILE
+    if (!configPath || !existsSync(configPath)) {
+        return {}
+    }
+
+    const values: Record<string, string> = {}
+    const content = readFileSync(configPath, 'utf8')
+
+    for (const rawLine of content.split(/\r?\n/)) {
+        const line = rawLine.trim()
+        if (!line || line.startsWith('#')) {
+            continue
+        }
+
+        const separatorIndex = line.indexOf('=')
+        if (separatorIndex === -1) {
+            continue
+        }
+
+        const name = line.slice(0, separatorIndex).trim()
+        const value = line.slice(separatorIndex + 1).trim()
+
+        if (!name) {
+            continue
+        }
+
+        values[name] = value
+    }
+
+    return values
+}
+
+const fileConfig = readEnvFileConfig()
+
 const options = {
     // These environment variables are exposed when we --link to a
     // MongoDB container.
-    url: process.env.MONGODB_PORT_27017_TCP || 'mongodb://127.0.0.1:27017',
-    db: process.env.MONGODB_DB_NAME || 'stf',
+    url: fileConfig.MONGODB_PORT_27017_TCP || process.env.MONGODB_PORT_27017_TCP || 'mongodb://127.0.0.1:27017',
+    db: fileConfig.MONGODB_DB_NAME || process.env.MONGODB_DB_NAME || 'stf',
     authKey: process.env.MONGODB_ENV_AUTHKEY,
     adbPortsRange: process.env.adbPortsRange || '29000-29999',
 }

@@ -111,13 +111,28 @@ async function copyApp(bundleRoot) {
   const appDir = path.join(bundleRoot, 'app')
   await mkdir(appDir, { recursive: true })
 
-  const entriesToCopy = ['.build', 'node_modules', 'package.json', 'package-lock.json']
+  const entriesToCopy = ['.build', 'node_modules', 'vendor', 'package.json', 'package-lock.json']
 
   for (const entry of entriesToCopy) {
     await cp(path.join(projectRoot, entry), path.join(appDir, entry), {
       recursive: true,
       dereference: true,
     })
+  }
+
+  const scrcpyServerSource = path.join(projectRoot, 'lib', 'units', 'device', 'resources', 'scrcpy-server.jar')
+  const scrcpyServerTarget = path.join(
+    appDir,
+    '.build',
+    'lib',
+    'units',
+    'device',
+    'resources',
+    'scrcpy-server.jar'
+  )
+
+  if (existsSync(scrcpyServerSource)) {
+    await cp(scrcpyServerSource, scrcpyServerTarget)
   }
 }
 
@@ -133,11 +148,18 @@ async function copyAdb(bundleRoot, adbSourceDir) {
 }
 
 async function writeBundleFiles(bundleRoot, adbSourceDir) {
+  const appDir = path.join(bundleRoot, 'app')
   const configDir = path.join(bundleRoot, 'config')
   const scriptsDir = path.join(bundleRoot, 'scripts')
+  await mkdir(appDir, { recursive: true })
   await mkdir(configDir, { recursive: true })
   await mkdir(scriptsDir, { recursive: true })
 
+  await writeFile(
+    path.join(appDir, 'README.md'),
+    createAppReadme(),
+    'utf8'
+  )
   await writeFile(path.join(configDir, 'provider.env'), createProviderEnvTemplate(), 'utf8')
   await writeFile(path.join(scriptsDir, 'start-adb.ps1'), createStartAdbScript(), 'utf8')
   await writeFile(path.join(scriptsDir, 'start-provider.ps1'), createStartProviderScript(), 'utf8')
@@ -231,7 +253,10 @@ function createProviderEnvTemplate() {
     'PROVIDER_IP=CHANGE_ME',
     'MIN_PORT=12010',
     'MAX_PORT=12100',
+    'NEED_SCRCPY=1',
     'STF_SECRET=CHANGE_ME',
+    'MONGODB_PORT_27017_TCP=mongodb://device.huangqiu.org:27017',
+    'MONGODB_DB_NAME=stf',
     'ALLOW_SELF_SIGNED=0',
     '',
   ].join('\n')
@@ -270,6 +295,7 @@ function createStartProviderScript() {
     '    $name, $value = $_ -split "=", 2',
     '    [System.Environment]::SetEnvironmentVariable($name, $value)',
     '}',
+    '$env:DEVICEHUB_ENV_FILE = $EnvFile',
     '$NodeExe = Join-Path $RootDir "node\\node.exe"',
     'if (-not (Test-Path $NodeExe)) {',
     '    Write-Error "node.exe not found in bundle runtime."',
@@ -277,6 +303,16 @@ function createStartProviderScript() {
     '}',
     'if ($env:ALLOW_SELF_SIGNED -eq "1") {',
     '    $env:NODE_TLS_REJECT_UNAUTHORIZED = "0"',
+    '}',
+    'if (-not $env:MONGODB_PORT_27017_TCP) {',
+    '    $env:MONGODB_PORT_27017_TCP = ("mongodb://" + $env:SERVER_HOST + ":27017")',
+    '}',
+    'if (-not $env:MONGODB_DB_NAME) {',
+    '    $env:MONGODB_DB_NAME = "stf"',
+    '}',
+    '$ExtraArgs = @()',
+    'if ($env:NEED_SCRCPY -eq "1") {',
+    '    $ExtraArgs += "--need-scrcpy"',
     '}',
     '$AppDir = Join-Path $RootDir "app"',
     'Set-Location $AppDir',
@@ -293,7 +329,8 @@ function createStartProviderScript() {
     '  --max-port $env:MAX_PORT `',
     '  --heartbeat-interval 10000 `',
     '  --screen-ws-url-pattern ("wss://" + $env:SERVER_HOST + "/d/" + $env:PROVIDER_IP + "/<%= publicPort %>/") `',
-    '  --secret $env:STF_SECRET',
+    '  --secret $env:STF_SECRET `',
+    '  @ExtraArgs',
     'exit $LASTEXITCODE',
     '',
   ].join('\r\n')
@@ -322,6 +359,15 @@ function createReadme(adbSourceDir) {
     adbSourceDir
       ? `ADB platform-tools were copied from: \`${adbSourceDir}\``
       : 'ADB platform-tools were not found on the build computer. Copy them into `adb/` before using this bundle.',
+    '',
+  ].join('\n')
+}
+
+function createAppReadme() {
+  return [
+    '# DeviceHub Connector Runtime',
+    '',
+    'This marker file makes the bundled `app/` directory resolve as the DeviceHub project root at runtime.',
     '',
   ].join('\n')
 }

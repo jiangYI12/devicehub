@@ -2,6 +2,8 @@ export type StartScreenStreamingMessage = {
   length: number
   orientation: number
   pid: number
+  streamFormat?: 'image' | 'h264'
+  videoCodec?: string
   quirks: {
     dumb: boolean
     alwaysUpright: boolean
