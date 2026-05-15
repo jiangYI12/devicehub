@@ -5,6 +5,7 @@ type AnnexBVideoDecoderConfig = VideoDecoderConfig & {
     format: 'annexb'
   }
 }
+type H264BitstreamFormat = 'annexb' | 'avcc'
 
 const H264_NAL_SPS = 7
 const H264_NAL_PPS = 8
@@ -123,6 +124,7 @@ export class ScrcpyH264Decoder {
   private codec: string | null = null
   private configured = false
   private inputBuffer = new Uint8Array(0)
+  private bitstreamFormat: H264BitstreamFormat | null = null
   private accessUnit: Uint8Array[] = []
   private accessUnitHasVcl = false
   private accessUnitIsKeyFrame = false
@@ -156,6 +158,7 @@ export class ScrcpyH264Decoder {
 
   reset(): void {
     this.inputBuffer = new Uint8Array(0)
+    this.bitstreamFormat = null
     this.accessUnit = []
     this.accessUnitHasVcl = false
     this.accessUnitIsKeyFrame = false
@@ -175,7 +178,28 @@ export class ScrcpyH264Decoder {
   }
 
   private consumeInputBuffer(): void {
-    let startCode = findStartCode(this.inputBuffer, 0)
+    if (!this.bitstreamFormat) {
+      const startCode = findStartCode(this.inputBuffer, 0)
+
+      if (startCode?.index === 0) {
+        this.bitstreamFormat = 'annexb'
+      } else if (this.inputBuffer.length >= 4) {
+        this.bitstreamFormat = 'avcc'
+      } else {
+        return
+      }
+    }
+
+    if (this.bitstreamFormat === 'annexb') {
+      this.consumeAnnexBInputBuffer()
+      return
+    }
+
+    this.consumeAvccInputBuffer()
+  }
+
+  private consumeAnnexBInputBuffer(): void {
+    const startCode = findStartCode(this.inputBuffer, 0)
 
     if (!startCode) {
       return
@@ -195,6 +219,38 @@ export class ScrcpyH264Decoder {
       this.consumeNalUnit(nalUnit, currentStartCode.prefixLength)
       cursor = nextStartCode.index
       currentStartCode = nextStartCode
+    }
+
+    this.inputBuffer = this.inputBuffer.subarray(cursor)
+  }
+
+  private consumeAvccInputBuffer(): void {
+    let cursor = 0
+
+    while (this.inputBuffer.length - cursor >= 4) {
+      const view = new DataView(
+        this.inputBuffer.buffer,
+        this.inputBuffer.byteOffset + cursor,
+        this.inputBuffer.byteLength - cursor
+      )
+      const nalLength = view.getUint32(0, false)
+
+      if (nalLength <= 0) {
+        this.onError(new Error('Scrcpy decoder received an invalid AVCC NAL unit length'))
+        this.reset()
+        return
+      }
+
+      if (this.inputBuffer.length - cursor < 4 + nalLength) {
+        break
+      }
+
+      const avccNalUnit = this.inputBuffer.subarray(cursor + 4, cursor + 4 + nalLength)
+      const annexBNalUnit = new Uint8Array(4 + avccNalUnit.length)
+      annexBNalUnit.set([0x00, 0x00, 0x00, 0x01], 0)
+      annexBNalUnit.set(avccNalUnit, 4)
+      this.consumeNalUnit(annexBNalUnit, 4)
+      cursor += 4 + nalLength
     }
 
     this.inputBuffer = this.inputBuffer.subarray(cursor)
