@@ -73,6 +73,8 @@ services:
         depends_on:
             devicehub-mongo:
                 condition: service_healthy
+        env_file:
+            - scripts/variables.env
         volumes:
             - ./scripts/mongo_setup.sh:/scripts/mongo_setup.sh
         restart: "no"
