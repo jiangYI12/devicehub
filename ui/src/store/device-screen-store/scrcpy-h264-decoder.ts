@@ -1,5 +1,10 @@
 type OnFrame = (frame: VideoFrame) => void
 type OnError = (error: Error) => void
+type AnnexBVideoDecoderConfig = VideoDecoderConfig & {
+  avc?: {
+    format: 'annexb'
+  }
+}
 
 const H264_NAL_SPS = 7
 const H264_NAL_PPS = 8
@@ -250,7 +255,10 @@ export class ScrcpyH264Decoder {
       this.decoder.configure({
         codec: this.codec,
         optimizeForLatency: true,
-      })
+        avc: {
+          format: 'annexb',
+        },
+      } as AnnexBVideoDecoderConfig)
       this.configured = true
     }
 
@@ -270,7 +278,7 @@ export class ScrcpyH264Decoder {
       data,
     })
 
-    this.timestamp += 1
+    this.timestamp += 33_333
     this.decoder.decode(chunk)
 
     this.accessUnit = []
